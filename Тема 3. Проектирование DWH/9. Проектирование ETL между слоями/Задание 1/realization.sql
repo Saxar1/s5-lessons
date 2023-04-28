@@ -1,55 +1,31 @@
--- restaurant_reward_sum
--- restaurant_id
--- restaurant_name
--- settlement_date
--- orders_count
--- orders_total_sum
--- orders_bonus_payment_sum
--- orders_bonus_granted_sum
--- order_processing_fee
-
 with 
-restaurant_m as (
-    select *
-    from dds.dm_restaurants),
-order_m as (
-    select
-        id,
-    	restaurant_id,
-    	timestamp_id
-    from dds.dm_orders
-    where order_status = 'CLOSED'),
-date_m as (
-	select
-		id,
-		"date"
-	from dds.dm_timestamps),
-fps_m as (
-    select
-        order_id,
-        total_sum,
-        bonus_payment,
-        bonus_grant
-    from dds.fct_product_sales)
-select 
-	rm.id,
-	rm.restaurant_name,
-	dm.date as settlement_date,
-	count(om.id) as orders_count,
-	sum(fm.total_sum) as order_total_sum,
-	sum(fm.bonus_payment) as order_bonus_payment_sum,
-	sum(fm.bonus_grant) as order_bonus_granted_sum,
-	sum(fm.total_sum) * 0.25 as order_processing_fee,
-	(sum(fm.total_sum) - sum(fm.total_sum) * 0.25 - sum(fm.bonus_payment)) as restaurant_reward_sum
-from restaurant_m as rm
-join order_m as om on om.restaurant_id = rm.id
-join date_m as dm on dm.id = om.timestamp_id
-join fps_m as fm on om.id = fm.order_id
-group by rm.id, rm.restaurant_name, dm.date;
-
-
-
-
-
+metrics as (
+	select 
+		dr.id as restaurant_id,
+		dr.restaurant_name as restaurant_name,
+		dt."date" as settlement_date,
+		do2.id as order_id,
+		fps.total_sum as total_sum,
+		fps.bonus_payment as bonus_payment,
+		fps.bonus_grant as bonus_grant
+	from dds.dm_restaurants dr
+	join dds.dm_orders do2 on dr.id = do2.restaurant_id
+	join dds.dm_timestamps dt on do2.timestamp_id = dt.id 
+	join dds.fct_product_sales fps on do2.id = fps.order_id
+	where do2.order_status = 'CLOSED')
+insert into cdm.dm_settlement_report (restaurant_id, restaurant_name, settlement_date, orders_count, orders_total_sum,
+orders_bonus_payment_sum, orders_bonus_granted_sum, order_processing_fee, restaurant_reward_sum)
+select
+	m.restaurant_id,
+	m.restaurant_name,
+	m.settlement_date,
+	count(distinct m.order_id) as orders_count,
+	sum(m.total_sum) as orders_total_sum,
+	sum(m.bonus_payment) as orders_bonus_payment_sum,
+	sum(m.bonus_grant) as orders_bonus_granted_sum,
+	sum(m.total_sum) * 0.25 as order_processing_fee,
+	(sum(m.total_sum) - sum(m.total_sum) * 0.25 - sum(m.bonus_payment)) as restaurant_reward_sum
+from metrics as m
+group by m.restaurant_id, m.restaurant_name, settlement_date;
 
 
