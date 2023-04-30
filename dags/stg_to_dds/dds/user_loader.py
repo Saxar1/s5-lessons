@@ -1,7 +1,7 @@
 from logging import Logger
 from typing import List
 
-from examples.stg import EtlSetting, StgEtlSettingsRepository
+from stg_to_dds import EtlSetting, DdsEtlSettingsRepository
 from lib import PgConnect
 from lib.dict_util import json2str
 from psycopg import Connection
@@ -11,10 +11,12 @@ from pydantic import BaseModel
 
 class UserObj(BaseModel):
     id: int
-    order_user_id: str
+    user_id: str
+    user_name: str
+    user_login: str
 
 
-class UserOriginRepository:
+class UserStgRepository:
     def __init__(self, pg: PgConnect) -> None:
         self._db = pg
 
@@ -27,7 +29,7 @@ class UserOriginRepository:
                         object_id as user_id,
                         object_value::json->>'name' as user_name,
                         object_value::json->>'login' as user_login
-                    FROM stg.ordersystem_users 
+                    FROM stg.ordersystem_users
                     WHERE id > %(threshold)s --Пропускаем те объекты, которые уже загрузили.
                     ORDER BY id ASC --Обязательна сортировка по id, т.к. id используем в качестве курсора.
                     LIMIT %(limit)s; --Обрабатываем только одну пачку объектов.
@@ -40,34 +42,38 @@ class UserOriginRepository:
         return objs
 
 
-class UserDestRepository:
+class UserDdsRepository:
     def insert_user(self, conn: Connection, user: UserObj) -> None:
         with conn.cursor() as cur:
             cur.execute(
                 """
-                    INSERT INTO stg.bonussystem_users(id, order_user_id)
-                    VALUES (%(id)s, %(order_user_id)s)
+                    INSERT INTO dds.dm_users(id, user_id, user_name, user_login)
+                    VALUES (%(id)s, %(user_id)s, %(user_name)s, %(user_login)s)
                     ON CONFLICT (id) DO UPDATE
                     SET
-                        order_user_id = EXCLUDED.order_user_id;
+                        user_id = EXCLUDED.user_id,
+                        user_name = EXCLUDED.user_name,
+                        user_login = EXCLUDED.user_login;
                 """,
                 {
                     "id": user.id,
-                    "order_user_id": user.order_user_id
+                    "user_id": user.user_id,
+                    "user_name": user.user_name,
+                    "user_login": user.user_login
                 },
             )
 
 
 class UserLoader:
-    WF_KEY = "example_users_origin_to_stg_workflow"
+    WF_KEY = "users_stg_to_dds_workflow"
     LAST_LOADED_ID_KEY = "last_loaded_id"
-    BATCH_LIMIT = 200  # Рангов мало, но мы хотим продемонстрировать инкрементальную загрузку рангов.
+    BATCH_LIMIT = 1000  # Рангов мало, но мы хотим продемонстрировать инкрементальную загрузку рангов.
 
-    def __init__(self, pg_origin: PgConnect, pg_dest: PgConnect, log: Logger) -> None:
+    def __init__(self, pg_dest: PgConnect, log: Logger) -> None:
         self.pg_dest = pg_dest
-        self.origin = UserOriginRepository(pg_origin)
-        self.stg = UserDestRepository()
-        self.settings_repository = StgEtlSettingsRepository()
+        self.origin = UserStgRepository(pg_dest)
+        self.dds = UserDdsRepository()
+        self.settings_repository = DdsEtlSettingsRepository()
         self.log = log
 
     def load_users(self):
@@ -92,7 +98,7 @@ class UserLoader:
 
             # Сохраняем объекты в базу dwh.
             for user in load_queue:
-                self.stg.insert_user(conn, user)
+                self.dds.insert_user(conn, user)
 
             # Сохраняем прогресс.
             # Мы пользуемся тем же connection, поэтому настройка сохранится вместе с объектами,

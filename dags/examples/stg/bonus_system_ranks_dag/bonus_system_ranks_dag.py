@@ -50,7 +50,7 @@ def sprint5_example_stg_bonus_system_ranks_dag():
     # Т.к. таск один, просто обозначим его здесь.
     ranks_dict  # type: ignore
     user_dict
-    # event_dict
+    event_dict
 
 
 stg_bonus_system_ranks_dag = sprint5_example_stg_bonus_system_ranks_dag()
