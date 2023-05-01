@@ -2,6 +2,7 @@ import logging
 
 import pendulum
 from airflow.decorators import dag, task
+from airflow.models.variable import Variable
 from stg_to_dds.dds.user_loader import UserLoader
 from lib import ConnectionBuilder
 
@@ -26,11 +27,12 @@ def sprint5_stg_to_dds_dag():
         rest_loader = UserLoader(dwh_pg_connect, log)
         rest_loader.load_users()  # Вызываем функцию, которая перельет данные.
 
-    # Инициализируем объявленные таски.
-    users_dict = load_users()
 
+    # Инициализируем объявленные таски.
+    users_loader = load_users()
+    
     # Далее задаем последовательность выполнения тасков.
-    users_dict  # type: ignore
+    users_loader  # type: ignore
 
 
 stg_to_dds_dag = sprint5_stg_to_dds_dag()
