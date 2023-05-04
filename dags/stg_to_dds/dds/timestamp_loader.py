@@ -1,8 +1,9 @@
 import json
-from datetime import datetime
+from datetime import datetime, date, time
 from typing import List, Optional
 
 from lib import PgConnect
+from logging import Logger
 from lib.dict_util import json2str
 from psycopg import Connection
 from psycopg.rows import class_row
@@ -11,31 +12,37 @@ from pydantic import BaseModel
 from stg_to_dds import DdsEtlSettingsRepository, EtlSetting
 
 
-class RestaurantJsonObj(BaseModel):
+class TSJsonObj(BaseModel):
     id: int
     object_id: str
     object_value: str
 
 
-class RestaurantDdsObj(BaseModel):
+class TSDdsObj(BaseModel):
     id: int
-    restaurant_id: str
-    restaurant_name: str
-    active_from: datetime
-    active_to: datetime
+    ts: datetime
+    year: int
+    month: int
+    day: int
+    time: time
+    date: date
 
 
-class RestaurantRawRepository:
-    def load_raw_restaurants(self, conn: Connection, last_loaded_record_id: int) -> List[RestaurantJsonObj]:
-        with conn.cursor(row_factory=class_row(RestaurantJsonObj)) as cur:
+class TSRawRepository:
+    def load_raw_ts(self, conn: Connection, last_loaded_record_id: int) -> List[TSDdsObj]:
+        with conn.cursor(row_factory=class_row(TSDdsObj)) as cur:
             cur.execute(
                 """
-                    SELECT
+                     SELECT
                         id,
-                        object_id,
-                        object_value
-                    FROM stg.ordersystem_restaurants
-                    WHERE id > %(last_loaded_record_id)s;
+                        (object_value::json ->> 'date')::timestamp as "ts",
+                        date_part('year', (object_value::json ->> 'date')::timestamp) as "year",
+                        date_part('month', (object_value::json ->> 'date')::timestamp) as "month",
+                        date_part('day', (object_value::json ->> 'date')::timestamp) as "day",
+                        (object_value::json ->> 'date')::timestamp::time as "time",
+                        (object_value::json ->> 'date')::timestamp::date as "date"
+                    FROM stg.ordersystem_orders 
+                    WHERE id > %(last_loaded_record_id)s AND object_value::json ->> 'final_status' in ('CANCELLED', 'CLOSED');
                 """,
                 {"last_loaded_record_id": last_loaded_record_id},
             )
@@ -43,66 +50,74 @@ class RestaurantRawRepository:
         return objs
 
 
-class RestaurantDdsRepository:
-    def insert_restaurant(self, conn: Connection, restaurant: RestaurantDdsObj) -> None:
+class TSDdsRepository:
+    def insert_ts(self, conn: Connection, timestamp: TSDdsObj) -> None:
         with conn.cursor() as cur:
             cur.execute(
                 """
-                    INSERT INTO dds.dm_restaurants(restaurant_id, restaurant_name, active_from, active_to)
-                    VALUES (%(restaurant_id)s, %(restaurant_name)s, %(active_from)s, %(active_to)s);
+                    INSERT INTO dds.dm_timestamps(ts, year, month, day, time, date)
+                    VALUES (%(ts)s, %(year)s, %(month)s, %(day)s, %(time)s, %(date)s);
                 """,
                 {
-                    "restaurant_id": restaurant.restaurant_id,
-                    "restaurant_name": restaurant.restaurant_name,
-                    "active_from": restaurant.active_from,
-                    "active_to": restaurant.active_to
+                    "ts": timestamp.ts,
+                    "year": timestamp.year,
+                    "month": timestamp.month,
+                    "day": timestamp.day,
+                    "time": timestamp.time,
+                    "date": timestamp.date
                 },
             )
 
-    def get_restaurant(self, conn: Connection, restaurant_id: str) -> Optional[RestaurantDdsObj]:
-        with conn.cursor(row_factory=class_row(RestaurantDdsObj)) as cur:
+    def get_ts(self, conn: Connection, ts_id: str) -> Optional[TSDdsObj]:
+        with conn.cursor(row_factory=class_row(TSDdsObj)) as cur:
             cur.execute(
                 """
                     SELECT
                         id,
-                        restaurant_id,
-                        restaurant_name,
-                        active_from,
-                        active_to
-                    FROM dds.dm_restaurants
-                    WHERE restaurant_id = %(restaurant_id)s;
+                        ts,
+                        year,
+                        month,
+                        day,
+                        time,
+                        date
+                    FROM dds.dm_timestamps
+                    WHERE id = %(ts_id)s;
                 """,
-                {"restaurant_id": restaurant_id},
+                {"ts_id": ts_id},
             )
             obj = cur.fetchone()
         return obj
 
 
-class RestaurantLoader:
-    WF_KEY = "restaurants_raw_to_dds_workflow"
+class TSLoader:
+    WF_KEY = "ts_raw_to_dds_workflow"
     LAST_LOADED_ID_KEY = "last_loaded_id"
 
-    def __init__(self, pg: PgConnect, settings_repository: DdsEtlSettingsRepository) -> None:
+    def __init__(self, pg: PgConnect, log: Logger) -> None:
         self.dwh = pg
-        self.raw = RestaurantRawRepository()
-        self.dds = RestaurantDdsRepository()
-        self.settings_repository = settings_repository
+        self.raw = TSRawRepository()
+        self.dds = TSDdsRepository()
+        self.settings_repository = DdsEtlSettingsRepository()
+        self.log = log
 
-    def parse_restaurants(self, raws: List[RestaurantJsonObj]) -> List[RestaurantDdsObj]:
-        res = []
-        for r in raws:
-            rest_json = json.loads(r.object_value)
-            t = RestaurantDdsObj(id=r.id,
-                                 restaurant_id=rest_json['_id'],
-                                 restaurant_name=rest_json['name'],
-                                 active_from=datetime.strptime(rest_json['update_ts'], "%Y-%m-%d %H:%M:%S"),
-                                 active_to=datetime(year=2099, month=12, day=31)
-                                 )
+    # def parse_ts(self, raws: List[TSJsonObj]) -> List[TSDdsObj]:
+    #     res = []
+    #     for ts in raws:
+    #         ts_json = json.loads(ts.object_value)
+    #         print(ts_json['date'])
 
-            res.append(t)
-        return res
+    #         t = TSDdsObj(id=ts.id,
+    #                         ts=datetime.strptime(ts_json['date'], "%Y-%m-%d %H:%M:%S"),
+    #                         year=datetime.strptime(ts_json['date'], "%Y"),
+    #                         month=datetime.strptime(ts_json['date'], "%m"),
+    #                         day=datetime.strptime(ts_json['date'], "%d"),
+    #                         time=datetime.strptime(ts_json['date'], "%H:%M:%S").time(),
+    #                         date=datetime.strptime(ts_json['date'], "%Y-%m-%d").date()
+    #                     )
+    #         res.append(t)
+    #     return res
 
-    def load_restaurants(self):
+    def load_ts(self):
         with self.dwh.connection() as conn:
             wf_setting = self.settings_repository.get_setting(conn, self.WF_KEY)
             if not wf_setting:
@@ -110,14 +125,14 @@ class RestaurantLoader:
 
             last_loaded_id = wf_setting.workflow_settings[self.LAST_LOADED_ID_KEY]
 
-            load_queue = self.raw.load_raw_restaurants(conn, last_loaded_id)
+            load_queue = self.raw.load_raw_ts(conn, last_loaded_id)
             load_queue.sort(key=lambda x: x.id)
-            restaurants_to_load = self.parse_restaurants(load_queue)
-            for r in restaurants_to_load:
-                existing = self.dds.get_restaurant(conn, r.restaurant_id)
+            # ts_to_load = self.parse_ts(load_queue)
+            for ts in load_queue:
+                existing = self.dds.get_ts(conn, ts.id)
                 if not existing:
-                    self.dds.insert_restaurant(conn, r)
+                    self.dds.insert_ts(conn, ts)
 
-                wf_setting.workflow_settings[self.LAST_LOADED_ID_KEY] = r.id 
+                wf_setting.workflow_settings[self.LAST_LOADED_ID_KEY] = ts.id 
                 wf_setting_json = json2str(wf_setting.workflow_settings)
                 self.settings_repository.save_setting(conn, wf_setting.workflow_key, wf_setting_json)

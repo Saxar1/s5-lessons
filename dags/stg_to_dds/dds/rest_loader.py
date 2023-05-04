@@ -3,6 +3,7 @@ from datetime import datetime
 from typing import List, Optional
 
 from lib import PgConnect
+from logging import Logger
 from lib.dict_util import json2str
 from psycopg import Connection
 from psycopg.rows import class_row
@@ -82,11 +83,12 @@ class RestaurantLoader:
     WF_KEY = "restaurants_raw_to_dds_workflow"
     LAST_LOADED_ID_KEY = "last_loaded_id"
 
-    def __init__(self, pg: PgConnect, settings_repository: DdsEtlSettingsRepository) -> None:
+    def __init__(self, pg: PgConnect, log: Logger) -> None:
         self.dwh = pg
         self.raw = RestaurantRawRepository()
         self.dds = RestaurantDdsRepository()
-        self.settings_repository = settings_repository
+        self.settings_repository = DdsEtlSettingsRepository()
+        self.log = log
 
     def parse_restaurants(self, raws: List[RestaurantJsonObj]) -> List[RestaurantDdsObj]:
         res = []

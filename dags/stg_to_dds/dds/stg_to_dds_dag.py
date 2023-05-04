@@ -6,7 +6,7 @@ from airflow.models.variable import Variable
 from stg_to_dds.dds_settings_repository import DdsEtlSettingsRepository
 from stg_to_dds.dds.user_loader import UserLoader
 from stg_to_dds.dds.rest_loader import RestaurantLoader
-# from stg_to_dds.dds.ts_loader import TSLoader
+from stg_to_dds.dds.timestamp_loader import TSLoader
 from stg_to_dds.dds.product_loader import ProductLoader
 
 from lib import ConnectionBuilder
@@ -40,11 +40,11 @@ def sprint5_stg_to_dds_dag():
         rest_loader = RestaurantLoader(dwh_pg_connect, log)
         rest_loader.load_restaurants()  # Вызываем функцию, которая перельет данные.
     
-    # @task(task_id="ts_load")
-    # def load_ts():
-    #     # создаем экземпляр класса, в котором реализована логика.
-    #     ts_loader = TSLoader(dwh_pg_connect, log)
-    #     ts_loader.load_ts()  # Вызываем функцию, которая перельет данные.
+    @task(task_id="timestamp_load")
+    def load_ts():
+        # создаем экземпляр класса, в котором реализована логика.
+        ts_loader = TSLoader(dwh_pg_connect, log)
+        ts_loader.load_ts()  # Вызываем функцию, которая перельет данные.
 
     @task(task_id="product_load")
     def load_products():
@@ -54,13 +54,13 @@ def sprint5_stg_to_dds_dag():
     # Инициализируем объявленные таски.
     users_loader = load_users()
     rest_loader = load_rest()
-    # ts_loader = load_ts()
+    ts_loader = load_ts()
     product_loader = load_products()
     
     # Далее задаем последовательность выполнения тасков.
     users_loader  # type: ignore
     rest_loader
-    # ts_loader
+    ts_loader
     product_loader
 
 
