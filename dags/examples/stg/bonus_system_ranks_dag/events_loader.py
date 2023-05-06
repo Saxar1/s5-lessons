@@ -58,11 +58,25 @@ class EventDestRepository:
                     "event_value": event.event_value
                 },
             )
+    def load_raw_events(self, conn: Connection, event_type: str, last_loaded_record_id: int) -> List[EventObj]:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                    SELECT
+                        *
+                    FROM stg.bonussystem_events
+                    WHERE id > %(last_loaded_record_id)s AND event_type = %(event_type)s;
+                """,
+                {
+                    "last_loaded_record_id": last_loaded_record_id,
+                    "event_type": event_type
+                },
+            )
 
 class EventLoader:
     WF_KEY = "example_events_origin_to_stg_workflow"
     LAST_LOADED_ID_KEY = "last_loaded_id"
-    BATCH_LIMIT = 1  # Рангов мало, но мы хотим продемонстрировать инкрементальную загрузку рангов.
+    BATCH_LIMIT = 10  # Рангов мало, но мы хотим продемонстрировать инкрементальную загрузку рангов.
 
     def __init__(self, pg_origin: PgConnect, pg_dest: PgConnect, log: Logger) -> None:
         self.pg_dest = pg_dest

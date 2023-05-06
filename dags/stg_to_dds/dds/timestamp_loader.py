@@ -94,23 +94,6 @@ class TSLoader:
         self.settings_repository = DdsEtlSettingsRepository()
         self.log = log
 
-    # def parse_ts(self, raws: List[TSJsonObj]) -> List[TSDdsObj]:
-    #     res = []
-    #     for ts in raws:
-    #         ts_json = json.loads(ts.object_value)
-    #         print(ts_json['date'])
-
-    #         t = TSDdsObj(id=ts.id,
-    #                         ts=datetime.strptime(ts_json['date'], "%Y-%m-%d %H:%M:%S"),
-    #                         year=datetime.strptime(ts_json['date'], "%Y"),
-    #                         month=datetime.strptime(ts_json['date'], "%m"),
-    #                         day=datetime.strptime(ts_json['date'], "%d"),
-    #                         time=datetime.strptime(ts_json['date'], "%H:%M:%S").time(),
-    #                         date=datetime.strptime(ts_json['date'], "%Y-%m-%d").date()
-    #                     )
-    #         res.append(t)
-    #     return res
-
     def load_ts(self):
         with self.dwh.connection() as conn:
             wf_setting = self.settings_repository.get_setting(conn, self.WF_KEY)

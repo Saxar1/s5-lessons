@@ -1,5 +1,5 @@
 from logging import Logger
-from typing import List
+from typing import List, Optional
 
 from stg_to_dds import EtlSetting, DdsEtlSettingsRepository
 from lib import PgConnect
@@ -63,7 +63,18 @@ class OrderDdsRepository:
                     "timestamp_id": order.timestamp_id
                 },
             )
-
+    def get_order(self, conn: Connection, order_key: str) -> Optional[OrderObj]:
+            with conn.cursor(row_factory=class_row(OrderObj)) as cur:
+                cur.execute(
+                    """
+                        SELECT id, order_key, order_status, user_id, restaurant_id, timestamp_id
+                        FROM dds.dm_orders
+                        WHERE order_key = %(order_key)s;
+                    """,
+                    {"order_key": order_key},
+                )
+                obj = cur.fetchone()
+            return obj
 
 class OrderLoader:
     WF_KEY = "order_raw_to_dds_workflow"
