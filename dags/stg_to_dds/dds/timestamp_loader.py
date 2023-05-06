@@ -12,12 +12,6 @@ from pydantic import BaseModel
 from stg_to_dds import DdsEtlSettingsRepository, EtlSetting
 
 
-class TSJsonObj(BaseModel):
-    id: int
-    object_id: str
-    object_value: str
-
-
 class TSDdsObj(BaseModel):
     id: int
     ts: datetime

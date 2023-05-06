@@ -8,6 +8,7 @@ from stg_to_dds.dds.user_loader import UserLoader
 from stg_to_dds.dds.rest_loader import RestaurantLoader
 from stg_to_dds.dds.timestamp_loader import TSLoader
 from stg_to_dds.dds.product_loader import ProductLoader
+from stg_to_dds.dds.order_loader import OrderLoader
 
 from lib import ConnectionBuilder
 
@@ -51,17 +52,24 @@ def sprint5_stg_to_dds_dag():
         product_loader = ProductLoader(dwh_pg_connect, log)
         product_loader.load_products()
 
+    @task(task_id="order_load")
+    def load_orders():
+        product_loader = OrderLoader(dwh_pg_connect, log)
+        product_loader.load_orders()
+
     # Инициализируем объявленные таски.
     users_loader = load_users()
     rest_loader = load_rest()
     ts_loader = load_ts()
     product_loader = load_products()
+    order_loader = load_orders()
     
     # Далее задаем последовательность выполнения тасков.
     users_loader  # type: ignore
     rest_loader
     ts_loader
     product_loader
+    order_loader
 
 
 stg_to_dds_dag = sprint5_stg_to_dds_dag()
